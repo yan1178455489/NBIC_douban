@@ -25,10 +25,27 @@ class NBI(BaseEstimator, ClassifierMixin):
         k_x = np.sum(A, axis=0)#项目的参与数 按列加
         k_y = np.sum(A, axis=1)#用户的参与数 按行加
         W = np.zeros((A.shape[1], A.shape[1]))
-        for i in range(W.shape[0]):
-            for j in range(W.shape[1]):
-                if  k_x[j] != 0:
-                    W[i,j] = 1/k_x[j] * np.sum(np.divide(np.multiply(A[:,i],A[:,j]), np.where(k_y > 0,k_y,1)))
+        if algorithm == "HPD":
+            u_ke_avg = np.zeros(A.shape[0], dtype=float)
+            for u in range(A.shape[0]):
+                u_ke_avg[u] = 0
+                enum = 0
+                for e in range(A.shape[1]):
+                    if A[u][e] > 0:
+                        u_ke_avg[u] += k_x[e]
+                        enum += 1
+                if enum > 0:
+                    u_ke_avg[u] /= enum
+            for i in range(W.shape[0]):
+                for j in range(W.shape[1]):
+                    if k_x[j] != 0 and k_x[i] != 0:
+                        W[i, j] = 1 / (math.pow(k_x[i], 0.8) * math.pow(k_x[j], 0.2)) * np.sum(
+                            np.divide(np.multiply(A[:, i], A[:, j]), np.where(k_y > 0, k_y * u_ke_avg, 1)))
+        elif algorithm == "NBI":
+            for i in range(W.shape[0]):
+                for j in range(W.shape[1]):
+                    if  k_x[j] != 0:
+                        W[i,j] = 1/k_x[j] * np.sum(np.divide(np.multiply(A[:,i],A[:,j]), np.where(k_y > 0,k_y,1)))
         self.W_ =W
         return self
     
@@ -66,10 +83,12 @@ if __name__ == '__main__':
     hfactor = float(hfactor)
     lcfactor = input('lcfactor:')
     lcfactor = float(lcfactor)
-    tmfactor = input('tmfactor:')
-    tmfactor = float(tmfactor)
+    # tmfactor = input('tmfactor:')
+    # tmfactor = float(tmfactor)
     top_n = input('top_n:')
     top_n = int(top_n)
+    add_nf = input('add novelty factor:')
+    algorithm = input('algorithm:')
 
     time_start = time.time()
     file_path = 'douban/u.data'
@@ -129,6 +148,35 @@ if __name__ == '__main__':
             else:
                 u_train[u].append(i)
 
+    # # 活动-主题文件
+    # te = []
+    # et_file = open('douban/eid_type.txt', 'r')
+    # for line in et_file:
+    #     data = line.split(' ')
+    #     te.append([int(data[1]), int(data[0])])
+    # et_file.close()
+    # te = np.array(te)
+    # topic_num = max(te[:, 0]) + 1
+    # topic_event = np.zeros((topic_num, i_num))
+    # for line in te:
+    #     if line[1] >= i_num:
+    #         continue
+    #     topic_event[line[0]][line[1]] = 1
+    #
+    # # 活动-主办方文件
+    # he = []
+    # eh_file = open('douban/events_host.txt', 'r')
+    # for line in eh_file:
+    #     data = line.split(' ')
+    #     he.append([int(data[1]), int(data[0])])
+    # eh_file.close()
+    # he = np.array(he)
+    # host_num = max(he[:, 0]) + 1
+    # host_event = np.zeros((host_num, i_num))
+    # for line in he:
+    #     if line[1] >= i_num:
+    #         continue
+    #     host_event[line[0]][line[1]] = 1
     # # 地点活动文件
     # le = []
     # et_file = open('douban/location_event.csv', 'r')
@@ -159,39 +207,49 @@ if __name__ == '__main__':
     #     time_event[line[0]][line[1]] = 1
 
     nbi = NBI()
-    # nbi1 = NBI()
+    nbi1 = NBI()
     nbi2 = NBI()
-    # nbi3 = NBI()
+    nbi3 = NBI()
     # nbi4 = NBI()
 
+    # nbi.fit(ue)
+    # nbi1.fit(topic_event)
+    # nbi2.fit(host_event)
     # nbi3.fit(loc_event)
     # nbi4.fit(time_event)
-    # np.savetxt("douban_result/locW.txt", nbi3.W_)
-    # np.savetxt("douban_result/timeW.txt", nbi4.W_)
+    # np.savetxt("douban_result/HPDW.txt", nbi.W_)
+    # np.savetxt("douban_result/typeHPDW.txt", nbi1.W_)
+    # np.savetxt("douban_result/hostHPDW.txt", nbi2.W_)
+    # np.savetxt("douban_result/locHPDW.txt", nbi3.W_)
+    # np.savetxt("douban_result/timeHPDW.txt", nbi4.W_)
     # sys.exit()
-    # input("done!")
+    # print("done!")
 
-    participant_list = []
+    participant_unum = []
     for i in range(i_num):
-        participant_list.append([])
+        participant_unum.append(0)
     for ratingtuple in train_data:
         (i, j) = ratingtuple
-        participant_list[j].append(i)
+        participant_unum[j] += 1
+    max_k = 0
+    for i in range(i_num):
+        max_k = max(max_k, participant_unum[i])
+    print(max_k)
     u_testset = []
     for u in range(u_num):
         u_testset.append([])
     for tuple in test_data:
         u_testset[tuple[0]].append(tuple[1])
 
-    nbi.W_ = np.loadtxt("douban_result/W.txt")
-    # nbi1.W_ = np.loadtxt("douban_result/typeW.txt")
-    nbi2.W_ = np.loadtxt("douban_result/hostW.txt")
-    # nbi3.W_ = np.loadtxt("douban_result/locW.txt")
+    nbi.W_ = np.loadtxt("douban_result/HPDW.txt")
+    nbi1.W_ = np.loadtxt("douban_result/typeHPDW.txt")
+    nbi2.W_ = np.loadtxt("douban_result/hostHPDW.txt")
+    nbi3.W_ = np.loadtxt("douban_result/locHPDW.txt")
     # nbi4.W_ = np.loadtxt("douban_result/timeW.txt")
     nbi.W_ = nbi.W_ - 0.75 * np.multiply(nbi.W_,nbi.W_)
-    # nbi1.W_ = nbi1.W_ - 0.75 * np.multiply(nbi1.W_, nbi1.W_)
+    nbi1.W_ = nbi1.W_ - 0.75 * np.multiply(nbi1.W_, nbi1.W_)
     nbi2.W_ = nbi2.W_ - 0.75 * np.multiply(nbi2.W_, nbi2.W_)
-    # nbi3.W_ = nbi3.W_ - 0.75 * np.multiply(nbi3.W_, nbi3.W_)
+    nbi3.W_ = nbi3.W_ - 0.75 * np.multiply(nbi3.W_, nbi3.W_)
     # nbi4.W_ = nbi4.W_ - 0.75 * np.multiply(nbi4.W_, nbi4.W_)
     predict_ratings = np.zeros((u_num,i_num))
     Precision = 0
@@ -200,18 +258,32 @@ if __name__ == '__main__':
     hits = 0
     recommend_list = []
 
-    for u in range(u_num):
-        predict_ratings[u] = ufactor*nbi.predict(ue[u])+hfactor*nbi2.predict(ue[u])
-        #+tmfactor*nbi4.predict(ue[u])+lcfactor*nbi3.predict(ue[u])+tagfactor*nbi1.predict(ue[u])
-        tmp = getTopN(predict_ratings[u], u_cand[u])[:top_n]
-        sub_list = []
-        for j in tmp:
-            sub_list.append(j[1])
-        recommend_list.append(sub_list)
+    if add_nf == '0':
+        for u in range(u_num):
+            predict_ratings[u]=ufactor*nbi.predict(ue[u])+hfactor*nbi2.predict(ue[u])+tagfactor*nbi1.predict(ue[u])\
+                               +lcfactor*nbi3.predict(ue[u])
+            # +tmfactor*nbi4.predict(ue[u])
+            tmp = getTopN(predict_ratings[u], u_cand[u])[:top_n]
+            sub_list = []
+            for j in tmp:
+                sub_list.append(j[1])
+            recommend_list.append(sub_list)
+    else:
+        for u in range(u_num):
+            # predict_ratings[u] = ufactor*nbi.predict(ue[u])+hfactor*nbi2.predict(ue[u])+tagfactor*nbi1.predict(ue[u])+lcfactor*nbi3.predict(ue[u])
+            # +tmfactor*nbi4.predict(ue[u])
+            for j in range(1, i_num):
+                if participant_unum[j] > 24:
+                    predict_ratings[i][j] = predict_ratings[i][j] / math.log(participant_unum[j], 25)
+            tmp = getTopN(predict_ratings[u], u_cand[u])[:top_n]
+            sub_list = []
+            for j in tmp:
+                sub_list.append(j[1])
+            recommend_list.append(sub_list)
 
     inter_div = 0
     for u in range(u_num-1):
-        for t in range(u+1,u_num):
+        for t in range(u+1, u_num):
             common_list = [i for i in recommend_list[u] if i in recommend_list[t]]
             inter_div += 1 - len(common_list)/top_n
     inter_div /= (u_num*(u_num-1))/2
@@ -226,21 +298,20 @@ if __name__ == '__main__':
                 result_set.add(recommend_list[i][j])
                 if recommend_list[i][j] in u_testset[i]:
                     hits += 1
-                if len(participant_list[recommend_list[i][j]]) > 0:
-                    Novelty += -math.log(len(participant_list[recommend_list[i][j]]) / (u_num - 1), 2)
+                    Novelty += (1 + participant_unum[recommend_list[i][j]]) / (1 + max_k) / math.log(j + 2, 2)
             Precision += top_n
             Recall += len(u_testset[i])
     print(hits)
 
-    Novelty = Novelty / top_n / u_num
+    Novelty = 1 - Novelty / top_n / u_num
     Precision = hits / Precision
     Recall = hits / Recall
     intra_div /= (u_num * top_n * (top_n - 1) / 2)
 
-    print('runtime=', time.time()-time_start)
     print('precision=', Precision)
     print('recall=', Recall)
     print('novelty=', Novelty)
     print('inter_div=', inter_div)
     print('intra_div=', intra_div)
     print('coverage=', len(result_set)/i_num)
+    print('runtime=', time.time() - time_start)
